@@ -1,0 +1,269 @@
+#include <iostream>
+#include <phidget21.h>
+#include "OGL_CAM/glut.h"
+#include "OGL_CAM/OGLCAM.h"
+#include "OGL_CAM/definitions.h"
+
+using namespace OGLCAM;
+
+COGLCAM Camera;
+CPhidgetSpatial_SpatialEventData SensorData;
+CPhidgetSpatial_SpatialEventData CalibrationData;
+
+// Resets the camera
+void CameraReset ()
+{
+	 HFov = DEFAULT_FOV;
+	 NCP  = DEFAULT_NCP;
+	 FCP  = DEFAULT_FCP;
+	 Heading = 0.0;
+	 Pitch = 0.0;
+	 Roll = 0.0;
+	 PosX = 0.0;
+	 PosY = 0.0;
+	 PosZ = DEFAULT_CAMERA_HEIGHT;
+
+	 // sensor calibration 
+	for (int j = 0; j < 3; j++)
+	{
+		CalibrationData.acceleration   [j] = SensorData.acceleration  [j];
+		CalibrationData.angularRate    [j] = SensorData.angularRate   [j];
+		CalibrationData.magneticField  [j] = SensorData.magneticField [j];
+	}
+	// Reset common data structure
+	SensorData.acceleration [0] = SensorData.acceleration [1] = SensorData.acceleration [2] = 0.0;
+	SensorData.angularRate  [0] = SensorData.angularRate  [1] = SensorData.angularRate  [2] = 0.0;
+	SensorData.magneticField[0] = SensorData.magneticField[1] = SensorData.magneticField[2] = 0.0;
+	SensorData.timestamp.seconds = SensorData.timestamp.microseconds = 0.0;
+}
+
+//handles the window's resizing event
+void reshape(int x, int y)
+{
+	Camera.Update (x, y, HFov, NCP, FCP);
+}
+
+//displays the scene.
+void Display(void)
+{
+	Camera.Update (PosX, PosY, PosZ, Heading, Pitch, Roll, HFov);
+	Camera.Render ();
+}
+
+//handles the key down events
+void KeyDown(unsigned char key, int x, int y)
+{
+	switch (key) 
+	{
+		case '6':		
+			Heading-=0.5;
+			break;
+		case '4':		
+			Heading+=0.5;;
+			break;
+		case '8':		
+			Pitch -= 0.5;
+			break;
+		case '2':		
+			Pitch += 0.5;
+			break;
+		case '1':		
+			Roll -= 0.5;
+			break;
+		case '3':		
+			Roll += 0.5;
+			break;
+		case '+':
+			if (HFov >= 2.0) HFov -= 1.0f;
+			break;
+		case '-':		
+			if (HFov < 179.0) HFov += 1.0f;
+			break;
+		case '7':
+			CameraReset ();
+			break;
+	}
+}
+
+//callback that will run if the Spatial is attached to the computer
+int CCONV AttachHandler(CPhidgetHandle spatial, void *userptr)
+{
+	int serialNo;
+	CPhidget_getSerialNumber(spatial, &serialNo);
+	std::cout << "Spatial attached: " << serialNo << std::endl;
+	return 0;
+}
+
+//callback that will run if the Spatial is detached from the computer
+int CCONV DetachHandler(CPhidgetHandle spatial, void *userptr)
+{
+	int serialNo;
+	CPhidget_getSerialNumber(spatial, &serialNo);
+	std::cout << "Spatial Detached : " << serialNo << std::endl;
+	return 0;
+}
+
+//callback that will run if the Spatial generates an error
+int CCONV ErrorHandler(CPhidgetHandle spatial, void *userptr, int ErrorCode, const char *unknown)
+{
+	std::cout << "Error handled: " << ErrorCode << " / "<< unknown << std::endl;
+	return 0;
+}
+
+//callback that will run at datarate
+//data - array of spatial event data structures that holds the spatial data packets that were sent in this event
+//count - the number of spatial data event packets included in this event
+int CCONV SpatialDataHandler(CPhidgetSpatialHandle spatial, void *userptr, CPhidgetSpatial_SpatialEventDataHandle *data, int count)
+{
+	if (count < 1) return -1;
+	
+	//std::cout << "Number of Data Packets in this event: " << count << std::endl;
+	for(int i = 0; i < count; i++)
+	{
+		//std::cout << "=== Data Set: "<< i << std::endl;
+		//std::cout << "Acceleration>   x: " << data[i]->acceleration[0] << " y: " << data[i]->acceleration[1] << " z: " << data[i]->acceleration[2] << std::endl; 
+		//std::cout << "Angular Rate>   x: " << data[i]->angularRate[0] << " y: " << data[i]->angularRate[1] << " z: " << data[i]->angularRate[2] << std::endl;
+		//std::cout << "Magnetic Field> x: " << data[i]->magneticField[0] << " y: " << data[i]->magneticField[1] << " z: " << data[i]->magneticField[2] << std::endl;
+		//std::cout << "Timestamp> seconds: " << data[i]->timestamp.seconds << " -- microseconds: " << data[i]->timestamp.microseconds << std::endl;
+
+		// Cumulate data in common data structure
+		for (int j = 0; j < 3; j++)
+		{
+			SensorData.acceleration   [j] = data[i]->acceleration  [j];
+			SensorData.angularRate    [j] = data[i]->angularRate   [j];
+			SensorData.magneticField  [j] = data[i]->magneticField [j];
+		}
+	}
+	//std::cout << "---------------------------------------------"<< std::endl;
+	
+	// Average the cumulated data
+	for (int j = 0; j < 3; j++)
+	{
+		SensorData.acceleration   [j] = ((SensorData.acceleration   [j] / (double) count) / PIdiv180) - CalibrationData.acceleration  [j];
+		SensorData.angularRate    [j] = ((SensorData.angularRate    [j] / (double) count) / PIdiv180) - CalibrationData.angularRate   [j];
+		SensorData.magneticField  [j] = ((SensorData.magneticField  [j] / (double) count) / PIdiv180) - CalibrationData.magneticField [j];
+	}
+	//Keep the last timestamp
+	SensorData.timestamp.seconds = data[count-1]->timestamp.seconds;
+	SensorData.timestamp.microseconds = data[count-1]->timestamp.microseconds;
+	return 0;
+}
+
+//Display the properties of the attached phidget to the screen.  
+//We will be displaying the name, serial number, version of the attached device, the number of accelerometer, gyro, and compass Axes, and the current data rate
+// of the attached Spatial.
+int display_properties(CPhidgetHandle phid)
+{
+	int serialNo, version;
+	const char* ptr;
+	int numAccelAxes, numGyroAxes, numCompassAxes, dataRateMax, dataRateMin;
+
+	CPhidget_getDeviceType(phid, &ptr);
+	CPhidget_getSerialNumber(phid, &serialNo);
+	CPhidget_getDeviceVersion(phid, &version);
+	CPhidgetSpatial_getAccelerationAxisCount((CPhidgetSpatialHandle)phid, &numAccelAxes);
+	CPhidgetSpatial_getGyroAxisCount((CPhidgetSpatialHandle)phid, &numGyroAxes);
+	CPhidgetSpatial_getCompassAxisCount((CPhidgetSpatialHandle)phid, &numCompassAxes);
+	CPhidgetSpatial_getDataRateMax((CPhidgetSpatialHandle)phid, &dataRateMax);
+	CPhidgetSpatial_getDataRateMin((CPhidgetSpatialHandle)phid, &dataRateMin);
+
+	std::cout << "Devive ptr : " << ptr << std::endl;
+	std::cout << "Serial Number: "<< serialNo << "version : " << version << std::endl;
+	std::cout << "Number of Accel Axes: "<< numAccelAxes << std::endl;
+	std::cout << "Number of Gyro Axes: " << numGyroAxes << std::endl;
+	std::cout << "Number of Compass Axes: " << numCompassAxes << std::endl;
+	std::cout << "datarate> Max: " <<dataRateMax << "  Min: " << dataRateMin << std::endl;
+
+	return 0;
+}
+
+void IdleFunc() 
+{
+	// Update camera with magentometer data
+	Pitch = (GLfloat) SensorData.magneticField[0];
+	Roll = (GLfloat) SensorData.magneticField[1];
+	Heading = (GLfloat) SensorData.magneticField[2];
+
+
+	glutPostRedisplay();
+}
+
+int main(int argc, char **argv)
+{
+	int result = 0;
+
+	std::cout << "---------------------------------------------"<< std::endl;
+	std::cout << "Camera simulation for traking test\n";
+	std::cout << "6 rotate camera right 0.5 deg\n";
+	std::cout << "4 rotate camera left  0.5 deg\n"; 
+	std::cout << "2 rotate camera up    0.5 deg\n";
+	std::cout << "8 rotate camera down  0.5 deg\n";
+	std::cout << "1 Roll camera left    0.5 deg\n";
+	std::cout << "3 Roll camera right   0.5 deg\n";
+	std::cout << "+ zoom in             1 deg\n";
+	std::cout << "- zoom out            1 deg\n";
+	std::cout << "7 RESET VIEW \n";
+	
+	// Phidget Initialisation
+	//Declare a spatial handle
+	CPhidgetSpatialHandle spatial = 0;
+
+	//create the spatial object
+	CPhidgetSpatial_create(&spatial);
+
+	//Set the handlers to be run when the device is plugged in or opened from software, unplugged or closed from software, or generates an error.
+	CPhidget_set_OnAttach_Handler((CPhidgetHandle)spatial, AttachHandler, NULL);
+	CPhidget_set_OnDetach_Handler((CPhidgetHandle)spatial, DetachHandler, NULL);
+	CPhidget_set_OnError_Handler((CPhidgetHandle)spatial, ErrorHandler, NULL);
+
+	//Registers a callback that will run according to the set data rate that will return the spatial data changes
+	//Requires the handle for the Spatial, the callback handler function that will be called, 
+	//and an arbitrary pointer that will be supplied to the callback function (may be NULL)
+	CPhidgetSpatial_set_OnSpatialData_Handler(spatial, SpatialDataHandler, NULL);
+
+	//open the spatial object for device connections
+	CPhidget_open((CPhidgetHandle)spatial, -1);
+
+	//get the program to wait for a spatial device to be attached
+	std::cout << "---------------------------------------------"<< std::endl;
+	std::cout << "Waiting for Phidget / spatial to be attached.... \n";
+	if((result = CPhidget_waitForAttachment((CPhidgetHandle)spatial, 10000)))
+	{
+		const char *err;
+		CPhidget_getErrorDescription(result, &err);
+		std::cout << "Problem waiting for attachment: "<< err <<"\n";
+		return 0;
+	}
+
+	//Display the properties of the attached spatial device
+	display_properties((CPhidgetHandle)spatial);
+
+	//Set the data rate for the spatial events
+	CPhidgetSpatial_setDataRate(spatial, 16);
+
+	// Window creation (GLUT)
+	glutInit(&argc, argv);
+	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
+	glutInitWindowSize(DEFAULTWINDOW_WIDTH,DEFAULTWINDOW_HEIGHT);
+	glutCreateWindow("Camera");
+	glutDisplayFunc(Display);
+	glutReshapeFunc(reshape);
+	glutKeyboardFunc(KeyDown);
+	
+	//OPEN GL Call backs registration
+	glutIdleFunc(IdleFunc);
+
+	// Camera reset for calibration
+	CameraReset ();
+
+	// Main simulation loop
+	glutMainLoop();
+
+	// Exit
+	//since user input has been read, this is a signal to terminate the program so we will close the phidget and delete the object we created
+	std::cout << "Closing...\n";
+	CPhidget_close((CPhidgetHandle)spatial);
+	CPhidget_delete((CPhidgetHandle)spatial);
+
+	return result;             
+}

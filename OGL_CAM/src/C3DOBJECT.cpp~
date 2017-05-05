@@ -1,0 +1,194 @@
+#include "C3DOBJECT.h"
+
+namespace OGLCAM
+{
+	C3DOBJECT::C3DOBJECT(void):
+	m_DrawStyle (WIRESHADED),
+	m_nbMaterial (0)
+	{
+		setScale1F (1.0f);
+	}
+
+	C3DOBJECT::~C3DOBJECT(void)
+	{
+		m_FaceIndicies.clear ();
+		m_Verticies.clear ();
+		m_Normals.clear ();
+		m_Mappings.clear ();
+		m_MaterialRefs.clear ();
+	}
+
+	void C3DOBJECT::addMaterials (TMATERIAL* Mat, unsigned int numMat)
+	{	
+		unsigned int i = 0;
+		while ((m_nbMaterial < NB_MAX_MATERIAL) & (i < numMat))
+		{
+			int j;
+			for (j= 0; j < 3; j++) {m_Materials [m_nbMaterial].ambient[j]	= Mat[i].ambient[j];}
+			for (j= 0; j < 3; j++) {m_Materials [m_nbMaterial].diffuse[j]	= Mat[i].diffuse[j];}
+			for (j= 0; j < 3; j++) {m_Materials [m_nbMaterial].specular[j]	= Mat[i].specular[j];}
+			for (j= 0; j < 3; j++) {m_Materials [m_nbMaterial].emission[j]	= Mat[i].emission[j];}
+			m_Materials [m_nbMaterial].alpha	= Mat[i].alpha;
+			m_Materials [m_nbMaterial].phExp	= Mat[i].phExp;
+			m_Materials [m_nbMaterial].texture	= Mat[i].texture;
+			
+			i++; m_nbMaterial ++;
+		}
+	}
+
+	void C3DOBJECT::addFaceIndicies (unsigned int* Indicies, unsigned int numFace)
+	{
+		for(unsigned int i=0; i< numFace; i++)
+		{
+			TFACEINDICIES newFace;
+			for(int j=0;j<3;j++)
+			{
+				newFace.Vert [j]	= *(Indicies + (i*9) +  j     );
+				newFace.Norm [j]	= *(Indicies + (i*9) +  j + 3 );
+				newFace.Text [j]	= *(Indicies + (i*9) +  j + 6 );
+			}
+			m_FaceIndicies.push_back(newFace);
+		}
+	}
+
+	void C3DOBJECT::addVerticies (GLfloat* Verticies, unsigned int numVerticies)
+	{
+		GLfloat x, y, z;
+		m_Position.getGLCoord3F (&x, &y, &z);
+		for(unsigned int i=0; i< numVerticies; i++)
+		{
+			TVERTEX newVertex;
+			newVertex.x = (*(Verticies + (3*i)) * m_ScaleFactor[0]) + x;
+			newVertex.y = (*(Verticies + (3*i) + 1) * m_ScaleFactor[1])+ y;
+			newVertex.z = (*(Verticies + (3*i) + 2) * m_ScaleFactor[2]) + z;
+			m_Verticies.push_back(newVertex);
+		}
+	}
+
+	void C3DOBJECT::addNormals (GLfloat* Normals, unsigned int numNormals)
+	{
+		for(unsigned int i=0; i< numNormals; i++)
+		{
+			TNORMAL newNormal;
+			newNormal.nx = *(Normals + (3*i)) ;
+			newNormal.ny = *(Normals + (3*i) + 1) ;
+			newNormal.nz = *(Normals + (3*i) + 2) ;
+			m_Normals.push_back(newNormal);
+		}
+	}
+
+	void C3DOBJECT::addMappings (GLfloat* Mappings, unsigned int numMappings)
+	{
+		for(unsigned int i=0; i< numMappings; i++)
+		{
+			TMAPPING newMapping;
+			newMapping.s = *(Mappings + (2*i));
+			newMapping.t = *(Mappings + (2*i) + 1);
+			m_Mappings.push_back(newMapping);
+		}
+	}
+
+	void C3DOBJECT::addMatIndicies (int* matIndicies, unsigned int numIndicies)
+	{
+		for(unsigned int i=0; i< numIndicies; i++)
+		{
+			TMATERIALREF newMatRef;
+			newMatRef.matindex  = *(matIndicies + (2*i));
+			newMatRef.facecount = *(matIndicies + (2*i) + 1);
+			m_MaterialRefs.push_back(newMatRef);
+		}
+	}
+
+
+	void C3DOBJECT::SetMaterialValues (GLenum mode,GLfloat *f,GLfloat alpha)
+	{
+		GLfloat d[4];
+		d[0]=f[0];
+		d[1]=f[1];
+		d[2]=f[2];
+		d[3]=alpha;
+		glMaterialfv (GL_FRONT_AND_BACK,mode,d);
+	}
+
+	void C3DOBJECT::SelectMaterial(unsigned int i)
+	{
+		if (i >= m_nbMaterial) return;
+	  
+		// Define the reflective properties of the 3D Object faces.
+		GLfloat alpha= m_Materials[i].alpha;
+		SetMaterialValues (GL_AMBIENT, m_Materials[i].ambient,alpha);
+		SetMaterialValues (GL_DIFFUSE, m_Materials[i].diffuse,alpha);
+		SetMaterialValues (GL_SPECULAR, m_Materials[i].specular,alpha);
+		SetMaterialValues (GL_EMISSION, m_Materials[i].emission,alpha);
+		glMaterialf (GL_FRONT_AND_BACK,GL_SHININESS,m_Materials[i].phExp);
+	}
+
+	void C3DOBJECT::draw ()
+	{
+		GLfloat x, y, z, h, p, r;
+		m_Position.getGLCoord3F (&x, &y, &z);
+		m_Position.getEuler3F (&h, &p, &r);
+
+		glMatrixMode (GL_MODELVIEW);
+		glLoadIdentity ();
+
+		// Apply translation
+		glTranslatef (x, y, z);
+	    
+		// Apply Heading
+		glRotatef (h, 0.0f, 1.0f, 0.0f);
+	   
+		// Apply Pitch
+		glRotatef (p, 1.0f, 0.0f, 0.0f);
+	    
+		// Apply Roll
+		glRotatef (r, 0.0f, 0.0f, 1.0f);
+
+		// if scale is required
+		glScalef (m_ScaleFactor [0],m_ScaleFactor [1],m_ScaleFactor [2]);  
+
+		int mcount=0;
+		int mindex=0;
+		TFACEINDICIESsCI FIit;
+		FIit = m_FaceIndicies.begin();
+		while (FIit != m_FaceIndicies.end())
+		{
+		   if (!mcount)
+		   {
+				SelectMaterial(m_MaterialRefs[mindex].matindex);
+				mcount= m_MaterialRefs[mindex].facecount;
+				mindex++;
+		   }
+		   mcount--;
+
+		   if ((m_DrawStyle == SHADED) || (m_DrawStyle == WIRESHADED))
+		   {
+			   glBegin(GL_TRIANGLES);
+			   for(int j=0;j<3;j++)
+			   {
+					 unsigned int vi= FIit->Vert[j];
+					 unsigned int ni= FIit->Norm[j];
+					 unsigned int ti= FIit->Text[j];
+					 glNormal3f (m_Normals[ni].nx, m_Normals[ni].ny, m_Normals[ni].nz);
+					 glTexCoord2f(m_Mappings[ti].s,m_Mappings[ti].t);
+					 glVertex3f (m_Verticies[vi].x, m_Verticies[vi].y, m_Verticies[vi].z);
+			   } 
+			   glEnd();
+		   }
+		   if ((m_DrawStyle == WIRED) || (m_DrawStyle == WIRESHADED))
+		   {
+			   glBegin(GL_LINE_LOOP);
+			   for(int j=0;j<3;j++)
+			   {
+					 unsigned int vi= FIit->Vert[j];
+					 unsigned int ni= FIit->Norm[j];
+					 unsigned int ti= FIit->Text[j];
+					 glNormal3f (m_Normals[ni].nx, -m_Normals[ni].ny, m_Normals[ni].nz);
+					 glVertex3f (m_Verticies[vi].x, m_Verticies[vi].y+(0.00001f) , m_Verticies[vi].z);
+			   } 
+			   glEnd();
+		   }
+		   ++FIit;
+		}	
+	}
+} // Namespace
