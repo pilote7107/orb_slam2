@@ -1,0 +1,21 @@
+<!--XML-->
+    <launch>
+     <node ns="tara/stereo" pkg="uvc_camera" type="tara_node" name="uvc_camera" output="screen" required="true">
+      <param name="width" type="int" value="752" />
+      <param name="height" type="int" value="480" />
+      <param name="fps" type="int" value="10" />
+      <param name="frame" type="string" value="webcam" />
+      <param name="device" type="string" value="/dev/video0" />
+      <param name="exposureValue" type="int" value="1" />
+      <param name="cameraLeft_info_url" type="string" value="file:///home/demo/catkin_orb2/src/see3cam/cameraLeft_640x480.yaml" />
+      <param name="cameraRight_info_url" type="string" value="file:///home/demo/catkin_orb2/src/see3cam/cameraRight_640x480.yaml" />
+     </node>
+
+
+     <node ns="tara/stereo/right" pkg="image_proc" type="image_proc" name="right_rect" />
+     <node ns="tara/stereo/left" pkg="image_proc" type="image_proc" name="left_rect" />
+
+
+
+
+    </launch>
